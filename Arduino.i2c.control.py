@@ -1,4 +1,8 @@
 # I2C write functions through SMBus implementation
+# This work is licensed under a Creative Commons 
+# Attribution-ShareAlike 4.0 International License.
+# Created by Mike Ochtman. Find me on LinkedIn and drop me 
+# a note if you found this helpful!
 
 import smbus
 import time

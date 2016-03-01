@@ -10,11 +10,17 @@
    Arduino has an RGB led attached on pwm pins so that
    brightness and color can be varied under control of the Raspberry Pi.
 
+   This work is licensed under a Creative Commons 
+   Attribution-ShareAlike 4.0 International License.
+
+   Software by Mike Ochtman
+   Find me on LinkedIn and drop me a note if you found this useful!
 */
 #include <Wire.h>
 
 #define rxFault 0x80
 #define txFault 0x40
+#define txRequest 0x20
 #define slaveAddress 8
 
 struct {
@@ -99,23 +105,31 @@ void i2cReceive(int byteCount) {
 }
 
 /*
- * i2cTransmit:
- * Parameters: none
- * Returns: none
- * Next function is called by twi interrupt service when twi detects
- * that the Master wants to get data back from the Slave.
- * Refer to Interface Specification for details of what data must be sent.
- * A transmit buffer (txTable) is populated with the data before sending.
- */
+   i2cTransmit:
+   Parameters: none
+   Returns: none
+   Next function is called by twi interrupt service when twi detects
+   that the Master wants to get data back from the Slave.
+   Refer to Interface Specification for details of what data must be sent.
+   A transmit buffer (txTable) is populated with the data before sending.
+*/
 void i2cTransmit() {
   // byte *txIndex = (byte*)&txTable[0];
   byte numBytes = 0;
   int t = 0; // temporary variable used in switch occasionally below
 
+  // check whether this request has a pending command.
+  // if not, it was a read_byte() instruction so we should
+  // return only the slave address. That is command 0.
+  if ((commsTable.control & txRequest) == 0) {
+    // this request did not come with a command, it is read_byte()
+    commsTable.command = 0; // clear previous command
+  }
+  // clear the rxRequest bit; reset it for the next request
+  commsTable.control &= ~txRequest;
 
   // If an invalid command is sent, we write nothing back. Master must
   // react to the crickets.
-
   switch (commsTable.command) {
     case 0x00: // send slaveAddress.
       txTable[0] = slaveAddress;
@@ -152,25 +166,22 @@ void i2cTransmit() {
       numBytes = 1;
       break;
     default:
-    // If an invalid command is sent, we write nothing back. Master must
-    // react to the sound of crickets.
+      // If an invalid command is sent, we write nothing back. Master must
+      // react to the sound of crickets.
       commsTable.control |= txFault;
   }
-
   if (numBytes > 0) {
     Wire.write((byte *)&txTable, numBytes);
   }
-
-
 }
 
 /*
- * i2cHandleRx:
- * Parameters: byte, the first byte sent by the I2C master. 
- * returns: byte, number of bytes read, or 0xFF if error
- * If the MSB of 'command' is 0, then master is sending only.
- * Handle the data reception in this function.
- */
+   i2cHandleRx:
+   Parameters: byte, the first byte sent by the I2C master.
+   returns: byte, number of bytes read, or 0xFF if error
+   If the MSB of 'command' is 0, then master is sending only.
+   Handle the data reception in this function.
+*/
 byte i2cHandleRx(byte command) {
   // If you are here, the I2C Master has sent data
   // using one of the SMBus write commands.
@@ -227,20 +238,22 @@ byte i2cHandleRx(byte command) {
 }
 
 /*
- * i2cHandleTx:
- * Parameters: byte, the first byte sent by master
- * Returns: number of bytes received, or 0xFF if error
- * Used to handle SMBus process calls
- */
+   i2cHandleTx:
+   Parameters: byte, the first byte sent by master
+   Returns: number of bytes received, or 0xFF if error
+   Used to handle SMBus process calls
+*/
 byte i2cHandleTx(byte command) {
   // If you are here, the I2C Master has requested information
 
   // If there is anything we need to do before the interrupt
   // for the read takes place, this is where to do it.
-  // Examples are handling process calls. Process calls do not work 
-  // correctly in SMBus implementation of python on linux, 
+  // Examples are handling process calls. Process calls do not work
+  // correctly in SMBus implementation of python on linux,
   // but it may work on better implementations.
-  
+
+  // signal to i2cTransmit() that a pending command is ready
+  commsTable.control |= txRequest;
   return 0;
 
 }
